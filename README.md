@@ -5,6 +5,8 @@ Requires Python 3.6 or greater
 
 ## Example Usage
 
+```python
+
   def success(result):
       print("Exectute success callback")
 
@@ -16,3 +18,4 @@ Requires Python 3.6 or greater
       network.on_failure(failure)
       network.get("https://example.com")
       
+```
