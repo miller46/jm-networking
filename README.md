@@ -3,6 +3,12 @@ Basic networking layer with async callbacks
 
 Requires Python 3
 
+## Installation
+
+`pip install jm-networking`
+
+Latest version is 1.0.7
+
 ## Example Usage
 
 ```python
@@ -17,8 +23,4 @@ Requires Python 3
       network.on_success(success)
       network.on_failure(failure)
       network.get("https://example.com")
-      
 ```
-`pip install jm-networking`
-
-Latest version is 1.0.7
