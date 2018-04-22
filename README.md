@@ -1,7 +1,7 @@
 # jm-networking
 Basic networking layer with async callbacks
 
-Requires Python 3.6 or greater
+Requires Python 3
 
 ## Example Usage
 
@@ -19,3 +19,6 @@ Requires Python 3.6 or greater
       network.get("https://example.com")
       
 ```
+`pip install jm-networking`
+
+Latest version is 1.0.7
