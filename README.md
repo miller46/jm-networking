@@ -7,7 +7,7 @@ Requires Python 3
 
 `pip install jm-networking`
 
-Latest version is 1.0.7
+Latest version is 1.0.9
 
 ## Example Usage
 
