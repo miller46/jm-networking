@@ -14,7 +14,7 @@ Latest version is 1.0.7
 ```python
 
   def success_callback(result):
-      print("Exectute success callback")
+      print("Execute success callback")
 
   def failure_callback(result):
       print("Execute failure callback")
@@ -24,3 +24,14 @@ Latest version is 1.0.7
       network.on_failure(failure_callback)
       network.get("https://example.com")
 ```
+### 
+```
+
+    ...
+    network.post("https://example.com", {body: data})
+    
+    ...
+    network.put("https://example.com", {body: data})
+    
+    ...
+    network.delete("https://example.com")
