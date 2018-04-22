@@ -7,12 +7,12 @@ Requires Python 3
 
 `pip install jm-networking`
 
-Latest version is 1.0.10
+Latest version is 1.0.12
 
 ## Example Usage
 
 ```python
-  from jm_networking.network import Network
+  from jm_networking import Network
 
   def success_callback(result):
       print("Execute success callback")
@@ -25,8 +25,9 @@ Latest version is 1.0.10
       network.on_failure(failure_callback)
       network.get("https://example.com")
 ```
-### 
-```
+
+### Other HTTP methods
+```python
 
     ...
     network.post("https://example.com", {body: data})
@@ -36,3 +37,20 @@ Latest version is 1.0.10
     
     ...
     network.delete("https://example.com")
+```
+
+### Return response from callback (e.g. to return response to screen or render template in Flask)
+```python
+  def success_callback(result):
+      return "Response"
+
+  with Network() as network:
+      network.on_success(success_callback)
+      return network.get("https://example.com")
+```
+
+### 
+
+```
+"Response"
+```
