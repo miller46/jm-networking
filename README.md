@@ -7,11 +7,12 @@ Requires Python 3
 
 `pip install jm-networking`
 
-Latest version is 1.0.9
+Latest version is 1.0.10
 
 ## Example Usage
 
 ```python
+  from jm_networking.network import Network
 
   def success_callback(result):
       print("Execute success callback")
