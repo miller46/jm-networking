@@ -13,14 +13,14 @@ Latest version is 1.0.7
 
 ```python
 
-  def success(result):
+  def success_callback(result):
       print("Exectute success callback")
 
-  def failure(result):
+  def failure_callback(result):
       print("Execute failure callback")
 
   with Network() as network:
-      network.on_success(success)
-      network.on_failure(failure)
+      network.on_success(success_callback)
+      network.on_failure(failure_callback)
       network.get("https://example.com")
 ```
