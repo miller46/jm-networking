@@ -16,6 +16,12 @@ class Network:
     def on_failure(self, callback):
         self.on_failure_callback = callback
 
+    def on_exception(self, callback):
+        self.on_failure_callback = callback
+
+    def default_exception_callback(self):
+        self.log("")
+
     def get(self, url):
         self.log("Attempting GET " + url)
         req = requests.get(url)
@@ -38,10 +44,18 @@ class Network:
 
     def finish(self, result):
         if result.status_code < 400:
-            return self.on_success_callback(result)
+            if self.on_failure is not None:
+                try:
+                    return self.on_success_callback(result)
+                except Exception as ex:
+                    self.log(ex, error=True)
         else:
             self.log(result.status_code + ": " + result.text, error=True)
-            return self.on_failure_callback(result)
+            if self.on_failure is not None:
+                try:
+                    return self.on_failure_callback(result)
+                except Exception as ex:
+                    self.log(ex, error=True)
 
     def __enter__(self):
         return self
