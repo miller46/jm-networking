@@ -19,8 +19,8 @@ class Network:
     def on_exception(self, callback):
         self.on_failure_callback = callback
 
-    def default_exception_callback(self):
-        self.log("")
+    def default_exception_callback(self, exception):
+        self.log(exception, error=True)
 
     def get(self, url):
         self.log("Attempting GET " + url)
@@ -48,14 +48,16 @@ class Network:
                 try:
                     return self.on_success_callback(result)
                 except Exception as ex:
-                    self.log(ex, error=True)
+                    if self.on_exception is not None:
+                        return self.on_exception(ex)
         else:
             self.log(result.status_code + ": " + result.text, error=True)
             if self.on_failure is not None:
                 try:
                     return self.on_failure_callback(result)
                 except Exception as ex:
-                    self.log(ex, error=True)
+                    if self.on_exception is not None:
+                        return self.on_exception(ex)
 
     def __enter__(self):
         return self
