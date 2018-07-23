@@ -28,22 +28,34 @@ class Network:
 
     def get(self, url):
         self.log("Attempting GET " + url)
-        req = requests.get(url, self.headers, params=None)
+        params = {
+            "headers": self.headers
+        }
+        req = requests.get(url, params=params)
         return self.finish(req)
 
     def put(self, url, data):
         self.log("Attempting PUT " + url)
-        req = requests.put(url, self.headers, data=data)
+        params = {
+            "headers": self.headers
+        }
+        req = requests.put(url, data=data, params=params)
         return self.finish(req)
 
     def post(self, url, data):
+        params = {
+            "headers": self.headers
+        }
         self.log("Attempting POST " + url)
-        req = requests.post(url, self.headers, data=data)
+        req = requests.post(url, self.headers, data=data, params=params)
         return self.finish(req)
 
     def delete(self, url):
         self.log("Attempting DELETE " + url)
-        req = requests.delete(url, self.headers)
+        params = {
+            "headers": self.headers
+        }
+        req = requests.delete(url, params=params)
         return self.finish(req)
 
     def finish(self, result):

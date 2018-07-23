@@ -12,10 +12,10 @@ LONGDESCRIPTION = 'See the README.md file on GitHub for more information.'
 URL = 'https://github.com/miller46/jm-networking'
 EMAIL = 'jackmiller46@gmail.com'
 AUTHOR = 'Jack Miller'
-VERSION = '1.0.16'
+VERSION = '1.0.17'
 
 REQUIRED = [
-     'requests'
+     'requests==2.18.4'
 ]
 
 
