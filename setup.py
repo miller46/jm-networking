@@ -10,8 +10,8 @@ NAME = 'jm-networking'
 DESCRIPTION = 'A basic networking layer with async callbacks'
 LONGDESCRIPTION = 'See the README.md file on GitHub for more information.'
 URL = 'https://github.com/miller46/jm-networking'
-EMAIL = 'jackmiller46@gmail.com'
-AUTHOR = 'Jack Miller'
+EMAIL = 'miller46@protonmail.com'
+AUTHOR = 'miller46'
 VERSION = '1.0.17'
 
 REQUIRED = [
