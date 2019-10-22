@@ -15,7 +15,7 @@ AUTHOR = 'miller46'
 VERSION = '1.0.17'
 
 REQUIRED = [
-     'requests==2.18.4'
+     'requests==2.20.0'
 ]
 
 
