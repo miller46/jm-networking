@@ -12,10 +12,11 @@ LONGDESCRIPTION = 'See the README.md file on GitHub for more information.'
 URL = 'https://github.com/miller46/jm-networking'
 EMAIL = 'miller46@protonmail.com'
 AUTHOR = 'miller46'
-VERSION = '1.0.17'
+VERSION = '1.1.0'
 
 REQUIRED = [
-     'requests==2.18.4'
+     'requests',
+     'marshmallow_dataclass'
 ]
 
 

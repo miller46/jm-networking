@@ -1,14 +1,77 @@
+import json
 import requests
 import logging
 
+from marshmallow_dataclass import class_schema
 
-class Network:
+
+class JmNetwork:
+
+    logger = logging.getLogger()
+
+    @staticmethod
+    def get(url, params=None, **kwargs):
+        request = requests.get(url, params, **kwargs)
+        status_code = request.status_code
+        text = request.text
+        return status_code, text
+
+    @staticmethod
+    def get_json(url, params=None, **kwargs):
+        request = requests.get(url, params, **kwargs)
+        status_code = request.status_code
+        text = request.text
+        if status_code != 200:
+            return status_code, text
+        else:
+            payload = json.loads(text)
+            return status_code, payload
+
+    @staticmethod
+    def get_deserialized(url, class_object, params=None, **kwargs):
+        request = requests.get(url, params, **kwargs)
+        status_code = request.status_code
+        data = request.json()
+
+        try:
+            is_list = isinstance(data, list)
+            my_class_schema = class_schema(class_object)(many=is_list)
+            deserialized = my_class_schema.load(data)
+            return status_code, deserialized
+        except Exception as ex:
+            logging.error("Error deserializing object  %s", url)
+            raise ex
+
+    @staticmethod
+    def post(url, data=None, json=None, **kwargs):
+        request = requests.post(url, data, json, **kwargs)
+        status_code = request.status_code
+        text = request.text
+        return status_code, text
+
+    @staticmethod
+    def put(url, data=None, **kwargs):
+        request = requests.put(url, data, **kwargs)
+        status_code = request.status_code
+        text = request.text
+        return status_code, text
+
+    @staticmethod
+    def delete(url, **kwargs):
+        request = requests.delete(url, **kwargs)
+        status_code = request.status_code
+        text = request.text
+        return status_code, text
+
+
+class AsyncNetwork:
 
     logger = logging.getLogger()
 
     def __init__(self):
         self.on_success_callback = None
         self.on_failure_callback = None
+        self.on_exception_callback = None
         self.headers = {}
 
     def set_headers(self, headers):
@@ -21,59 +84,48 @@ class Network:
         self.on_failure_callback = callback
 
     def on_exception(self, callback):
-        self.on_failure_callback = callback
+        self.on_exception_callback = callback
 
     def default_exception_callback(self, exception):
         self.log(exception, error=True)
 
     def get(self, url):
         self.log("Attempting GET " + url)
-        params = {
-            "headers": self.headers
-        }
-        req = requests.get(url, params=params)
+        req = requests.get(url, headers=self.headers)
         return self.finish(req)
 
     def put(self, url, data):
         self.log("Attempting PUT " + url)
-        params = {
-            "headers": self.headers
-        }
-        req = requests.put(url, data=data, params=params)
+        req = requests.put(url, data=data, headers=self.headers)
         return self.finish(req)
 
     def post(self, url, data):
-        params = {
-            "headers": self.headers
-        }
         self.log("Attempting POST " + url)
-        req = requests.post(url, self.headers, data=data, params=params)
+        req = requests.post(url, data=data, json=None, headers=self.headers)
         return self.finish(req)
 
     def delete(self, url):
         self.log("Attempting DELETE " + url)
-        params = {
-            "headers": self.headers
-        }
-        req = requests.delete(url, params=params)
+        req = requests.delete(url, headers=self.headers)
         return self.finish(req)
 
     def finish(self, result):
         if result.status_code < 400:
-            if self.on_success is not None:
+            if self.on_success_callback is not None:
                 try:
                     return self.on_success_callback(result)
                 except Exception as ex:
-                    if self.on_exception is not None:
-                        return self.on_exception(ex)
+                    if self.on_exception_callback is not None:
+                        return self.on_exception_callback(ex)
         else:
             self.log(str(result.status_code) + ": " + result.text, error=True)
-            if self.on_failure is not None:
+            if self.on_failure_callback is not None:
                 try:
                     return self.on_failure_callback(result)
                 except Exception as ex:
-                    if self.on_exception is not None:
-                        return self.on_exception(ex)
+                    if self.on_exception_callback is not None:
+                        return self.on_exception_callback(ex)
+        return None
 
     def __enter__(self):
         return self

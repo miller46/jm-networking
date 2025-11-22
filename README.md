@@ -1,56 +1,95 @@
 # jm-networking
-Basic networking layer with async callbacks
 
-Requires Python 3
+Lightweight networking layer that optionally supports async callbacks and automatic deserialization.
+
+
+## Features
+
+- Simple static methods for quick requests
+- Async callbacks for success/failure/exception handling
+- Automatic JSON deserialization to dataclasses
 
 ## Installation
 
-`pip install jm-networking`
+```bash
+pip install jm-networking
+```
 
-Latest version is 1.0.12
+## Quick Start
 
-## Example Usage
+### Simple Requests
 
 ```python
-  from jm_networking import Network
+from jm_networking import JmNetwork
+from tests.example_model import ExampleModel
 
-  def success_callback(result):
-      print("Execute success callback")
+# Basic request
+status_code, text = JmNetwork.get("https://jsonplaceholder.typicode.com/todos/1")
 
-  def failure_callback(result):
-      print("Execute failure callback")
+# JSON response
+status_code, payload = JmNetwork.get_json("https://jsonplaceholder.typicode.com/todos/1")
 
-  with Network() as network:
-      network.on_success(success_callback)
-      network.on_failure(failure_callback)
-      network.get("https://example.com")
+# Automatic deserialization to dataclass
+status_code, model = JmNetwork.get_deserialized("https://jsonplaceholder.typicode.com/todos/1", ExampleModel)
 ```
 
-### Other HTTP methods
+### Callback Pattern
+
 ```python
+from jm_networking import AsyncNetwork
 
-    ...
-    network.post("https://example.com", {body: data})
-    
-    ...
-    network.put("https://example.com", {body: data})
-    
-    ...
-    network.delete("https://example.com")
+def on_success(result):
+    pass  # Handle successful response
+
+def on_failure(result):
+    pass  # Handle failure response
+
+with AsyncNetwork() as network:
+    network.on_success(on_success)
+    network.on_failure(on_failure)
+    network.get("https://jsonplaceholder.typicode.com/todos/1")
 ```
 
-### Return response from callback (e.g. to return response to screen or render template in Flask)
+### Custom Headers
+
 ```python
-  def success_callback(result):
-      return "Response"
+from jm_networking import AsyncNetwork
 
-  with Network() as network:
-      network.on_success(success_callback)
-      return network.get("https://example.com")
+def on_success(result):
+    pass  # Handle response
+
+with AsyncNetwork() as network:
+    network.set_headers({"Authorization": "Bearer token123"})
+    network.on_success(on_success)
+    network.get("https://jsonplaceholder.typicode.com/todos/1")
 ```
 
-### 
+### HTTP Methods
 
+```python
+# All methods support kwargs for requests library
+JmNetwork.get(url, params=None, **kwargs)
+JmNetwork.post(url, data=None, json=None, **kwargs)
+JmNetwork.put(url, data=None, **kwargs)
+JmNetwork.delete(url, **kwargs)
 ```
-"Response"
+
+### Model Deserialization
+
+```python
+from marshmallow_dataclass import dataclass
+from typing import Optional
+from jm_networking import JmNetwork
+from jm_networking.base_schema import BaseSchema
+
+@dataclass(base_schema=BaseSchema)
+class ExampleModel:
+    id: Optional[int] = None
+    userId: Optional[int] = None
+    title: Optional[str] = None
+    completed: Optional[bool] = None
+
+status, model = JmNetwork.get_deserialized("https://jsonplaceholder.typicode.com/todos/1", ExampleModel)
 ```
+
+
