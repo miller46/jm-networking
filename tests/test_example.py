@@ -1,6 +1,6 @@
 import unittest
 from unittest.mock import patch, Mock
-from jm_networking import JmNetwork
+from jm_networking import JmNetwork, ObjectNetworking
 from example_model import ExampleModel
 
 
@@ -18,7 +18,7 @@ class TestJmNetworkDeserialization(unittest.TestCase):
         }
         mock_get.return_value = mock_response
 
-        status, deserialized = JmNetwork.get_deserialized(
+        status, deserialized = ObjectNetworking.get(
             "https://jsonplaceholder.typicode.com/todos/1",
             ExampleModel
         )

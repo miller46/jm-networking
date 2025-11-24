@@ -10,37 +10,15 @@ class JmNetwork:
     logger = logging.getLogger()
 
     @staticmethod
-    def get(url, params=None, **kwargs):
+    def get(url, is_json=False, params=None, **kwargs):
         request = requests.get(url, params, **kwargs)
         status_code = request.status_code
         text = request.text
-        return status_code, text
-
-    @staticmethod
-    def get_json(url, params=None, **kwargs):
-        request = requests.get(url, params, **kwargs)
-        status_code = request.status_code
-        text = request.text
-        if status_code != 200:
+        if is_json is False or status_code != 200:
             return status_code, text
         else:
             payload = json.loads(text)
             return status_code, payload
-
-    @staticmethod
-    def get_deserialized(url, class_object, params=None, **kwargs):
-        request = requests.get(url, params, **kwargs)
-        status_code = request.status_code
-        data = request.json()
-
-        try:
-            is_list = isinstance(data, list)
-            my_class_schema = class_schema(class_object)(many=is_list)
-            deserialized = my_class_schema.load(data)
-            return status_code, deserialized
-        except Exception as ex:
-            logging.error("Error deserializing object  %s", url)
-            raise ex
 
     @staticmethod
     def post(url, data=None, json=None, **kwargs):
@@ -64,7 +42,56 @@ class JmNetwork:
         return status_code, text
 
 
-class AsyncNetwork:
+class ObjectNetworking:
+
+    @staticmethod
+    def get(url, class_object, params=None, **kwargs):
+        request = requests.get(url, params, **kwargs)
+        status_code = request.status_code
+        data = request.json()
+
+        try:
+            is_list = isinstance(data, list)
+            my_class_schema = class_schema(class_object)(many=is_list)
+            deserialized = my_class_schema.load(data)
+            return status_code, deserialized
+        except Exception as ex:
+            logging.error("Error deserializing object  %s", url)
+            raise ex
+
+    @staticmethod
+    def post(class_object, url, params, **kwargs):
+        return ObjectNetworking._req(class_object=class_object, url=url, params=params, method="POST", **kwargs)
+
+    @staticmethod
+    def cosimo_put(class_object, url, params, **kwargs):
+        return ObjectNetworking._req(class_object=class_object, url=url, params=params, method="PUT", **kwargs)
+
+    @staticmethod
+    def cosimo_delete(class_object, url, params, **kwargs):
+        return ObjectNetworking._req(class_object=class_object, url=url, params=params, method="DELETE", **kwargs)
+
+    @staticmethod
+    def _req(class_object, url, params, method, **kwargs):
+        method = method.lower()
+        cls = class_object.__class__
+        class_name = cls.__name__
+
+        schema_cls = class_schema(cls)
+        schema = schema_cls()
+        payload = schema.dump(class_object)
+
+        if method == "post":
+            resp = requests.post(url, json=payload, params=params)
+        elif method == "put":
+            resp = requests.put(url, json=payload, params=params)
+        elif method == "delete":
+            resp = requests.delete(url, params=params)
+        else:
+            raise ValueError(f"Unsupported method: {method}")
+        return resp
+
+class AsyncNetworking:
 
     logger = logging.getLogger()
 
