@@ -7,6 +7,7 @@ import requests
 import logging
 import threading
 import time
+from functools import lru_cache
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from urllib.parse import urlsplit
@@ -29,6 +30,11 @@ def _get_session():
             if _SESSION is None:
                 _SESSION = requests.Session()
     return _SESSION
+
+
+@lru_cache(maxsize=256)
+def _schema_class_for(cls):
+    return class_schema(cls)
 
 
 class NetworkError(Exception):
@@ -232,7 +238,8 @@ class ObjectNetworking:
     @staticmethod
     def get(url, class_object, params=None, **kwargs):
         try:
-            request = requests.get(url, params, **kwargs)
+            session = _get_session()
+            request = session.get(url, params=params, **kwargs)
         except requests.exceptions.Timeout as ex:
             raise NetworkTimeoutError("Request timed out", url=url, original=ex) from ex
         except requests.exceptions.RequestException as ex:
@@ -243,7 +250,7 @@ class ObjectNetworking:
 
         try:
             is_list = isinstance(data, list)
-            my_class_schema = class_schema(class_object)(many=is_list)
+            my_class_schema = _schema_class_for(class_object)(many=is_list)
             deserialized = my_class_schema.load(data)
             return status_code, deserialized
         except Exception as ex:
@@ -266,19 +273,21 @@ class ObjectNetworking:
     def _req(class_object, url, params, method, **kwargs):
         method = method.lower()
         cls = class_object.__class__
-        class_name = cls.__name__
 
-        schema_cls = class_schema(cls)
+        schema_cls = _schema_class_for(cls)
         schema = schema_cls()
         payload = schema.dump(class_object)
 
         try:
             if method == "post":
-                resp = requests.post(url, json=payload, params=params)
+                session = _get_session()
+                resp = session.post(url, json=payload, params=params)
             elif method == "put":
-                resp = requests.put(url, json=payload, params=params)
+                session = _get_session()
+                resp = session.put(url, json=payload, params=params)
             elif method == "delete":
-                resp = requests.delete(url, params=params)
+                session = _get_session()
+                resp = session.delete(url, params=params)
             else:
                 raise ValueError(f"Unsupported method: {method}")
         except requests.exceptions.Timeout as ex:
@@ -505,7 +514,8 @@ class RateLimitedNetworking:
         for attempt in range(self.max_tries + 1):
             self.pre_process(url)
             try:
-                response = requests.get(url, params=params, **kwargs)
+                session = _get_session()
+                response = session.get(url, params=params, **kwargs)
             except requests.exceptions.Timeout as ex:
                 raise NetworkTimeoutError("Request timed out", url=url, original=ex) from ex
             except requests.exceptions.RequestException as ex:
