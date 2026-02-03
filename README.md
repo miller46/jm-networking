@@ -78,6 +78,46 @@ except HttpError as exc:
     print(exc.status_code)
 ```
 
+Note: `HttpRedirectError` is only raised if redirects are disabled and a 3xx response is returned. By default, `requests` and `aiohttp` follow redirects, so you won’t typically see 3xx errors.
+
+### Exception Handling Patterns
+
+```python
+from jm_networking import (
+    NetworkError,
+    TransportError,
+    NetworkTimeoutError,
+    HttpClientError,
+    HttpServerError,
+    TooManyRequestsError,
+    NotFoundError,
+)
+
+try:
+    JmNetwork.get("https://example.com")
+except TooManyRequestsError:
+    # backoff / retry
+    ...
+except NotFoundError:
+    # resource missing
+    ...
+except HttpClientError as exc:
+    # any 4xx
+    print(exc.status_code)
+except HttpServerError:
+    # any 5xx
+    ...
+except NetworkTimeoutError:
+    # timeout
+    ...
+except TransportError:
+    # DNS/connection/SSL/etc
+    ...
+except NetworkError:
+    # catch-all for all network errors
+    ...
+```
+
 ### Object Serialization & Deserialization
 
 ```python
