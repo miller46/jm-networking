@@ -3,3 +3,7 @@ build
 dist
 jm_networking.egg-info
 venv
+/jm_networking/__pycache__
+/__pycache__
+/tests/__pycache__
+.DS_Store

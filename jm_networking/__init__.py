@@ -1,6 +1,9 @@
 import json
+from collections import deque
+
 import requests
 import logging
+import time
 
 from marshmallow_dataclass import class_schema
 
@@ -64,11 +67,11 @@ class ObjectNetworking:
         return ObjectNetworking._req(class_object=class_object, url=url, params=params, method="POST", **kwargs)
 
     @staticmethod
-    def cosimo_put(class_object, url, params, **kwargs):
+    def put(class_object, url, params, **kwargs):
         return ObjectNetworking._req(class_object=class_object, url=url, params=params, method="PUT", **kwargs)
 
     @staticmethod
-    def cosimo_delete(class_object, url, params, **kwargs):
+    def delete(class_object, url, params, **kwargs):
         return ObjectNetworking._req(class_object=class_object, url=url, params=params, method="DELETE", **kwargs)
 
     @staticmethod
@@ -166,3 +169,55 @@ class AsyncNetworking:
                 self.logger.error(message)
             else:
                 self.logger.info(message)
+
+class RateLimitedNetworking:
+
+    def __init__(self, max_retries=3, max_requests_per_second=10, timeout=10):
+        self.max_tries = max_retries
+        self.max_requests_per_second = max_requests_per_second if max_requests_per_second and max_requests_per_second > 0 else None
+        self.timeout = timeout
+        self.requests = deque()
+        self.retries = 0
+
+    def get(self, url, is_json=False, params=None, **kwargs):
+        last_status = None
+        last_payload = None
+        for attempt in range(self.max_tries + 1):
+            self.pre_process()
+            status_code, payload = JmNetwork.get(url, is_json=is_json, params=params, **kwargs)
+            last_status = status_code
+            last_payload = payload
+            if status_code != 429:
+                self.retries = 0
+                return status_code, payload
+
+            self.retries += 1
+            logging.info("429 Rate limit. Retrying in %s seconds...", self.timeout)
+            if attempt < self.max_tries:
+                time.sleep(self.timeout)
+
+        logging.error("429 Rate limit. Max retries (%s) reached.", self.max_tries)
+        return last_status, last_payload
+
+    def process_response(self, status_code, payload):
+        if status_code == 429:
+            logging.error("429 Rate limit. Max retries (%s) reached.", self.max_tries)
+        return status_code, payload
+
+    def pre_process(self):
+        if not self.max_requests_per_second:
+            return
+
+        now = time.monotonic()
+        while self.requests and now - self.requests[0] >= 1.0:
+            self.requests.popleft()
+
+        while len(self.requests) >= self.max_requests_per_second:
+            sleep_for = 1.0 - (now - self.requests[0])
+            if sleep_for > 0:
+                time.sleep(sleep_for)
+            now = time.monotonic()
+            while self.requests and now - self.requests[0] >= 1.0:
+                self.requests.popleft()
+
+        self.requests.append(time.monotonic())
