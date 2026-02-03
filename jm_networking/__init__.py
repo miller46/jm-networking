@@ -1,9 +1,13 @@
 import json
-from collections import deque
 
+import random
 import requests
 import logging
+import threading
 import time
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
+from urllib.parse import urlsplit
 
 from marshmallow_dataclass import class_schema
 
@@ -170,33 +174,121 @@ class AsyncNetworking:
             else:
                 self.logger.info(message)
 
+class RateLimitError(Exception):
+    def __init__(self, status_code, url, retries, response=None):
+        self.status_code = status_code
+        self.url = url
+        self.retries = retries
+        self.response = response
+        super().__init__(f"429 Rate limit after {retries} retries for {url}")
+
+
+class _TokenBucket:
+    def __init__(self, rate, capacity):
+        self.rate = rate
+        self.capacity = capacity
+        self.tokens = capacity
+        self.updated_at = time.monotonic()
+        self.lock = threading.Lock()
+
+    def acquire(self):
+        while True:
+            with self.lock:
+                now = time.monotonic()
+                elapsed = now - self.updated_at
+                if elapsed > 0:
+                    self.tokens = min(self.capacity, self.tokens + elapsed * self.rate)
+                    self.updated_at = now
+
+                if self.tokens >= 1:
+                    self.tokens -= 1
+                    return
+
+                if self.rate <= 0:
+                    return
+
+                wait = (1 - self.tokens) / self.rate
+
+            if wait > 0:
+                time.sleep(wait)
+
+
+def _retry_after_seconds(value):
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        pass
+    try:
+        parsed = parsedate_to_datetime(value)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        now = datetime.now(timezone.utc)
+        return max(0.0, (parsed - now).total_seconds())
+    except Exception:
+        return None
+
+
 class RateLimitedNetworking:
 
-    def __init__(self, max_retries=3, max_requests_per_second=10, timeout=10):
+    def __init__(
+        self,
+        max_retries=3,
+        max_requests_per_second=10,
+        timeout=10,
+        backoff_strategy="fixed",
+        jitter=False,
+        max_burst=None,
+        respect_retry_after=True,
+        raise_on_429=True,
+    ):
         self.max_tries = max_retries
         self.max_requests_per_second = max_requests_per_second if max_requests_per_second and max_requests_per_second > 0 else None
         self.timeout = timeout
-        self.requests = deque()
+        self.backoff_strategy = backoff_strategy
+        self.jitter = jitter
+        self.max_burst = max_burst
+        self.respect_retry_after = respect_retry_after
+        self.raise_on_429 = raise_on_429
         self.retries = 0
+        self._buckets = {}
+        self._buckets_lock = threading.Lock()
 
     def get(self, url, is_json=False, params=None, **kwargs):
         last_status = None
         last_payload = None
+        last_response = None
+
         for attempt in range(self.max_tries + 1):
-            self.pre_process()
-            status_code, payload = JmNetwork.get(url, is_json=is_json, params=params, **kwargs)
-            last_status = status_code
-            last_payload = payload
-            if status_code != 429:
+            self.pre_process(url)
+            response = requests.get(url, params=params, **kwargs)
+            last_response = response
+            last_status = response.status_code
+            last_payload = response.text
+
+            if is_json and response.status_code == 200:
+                try:
+                    last_payload = response.json()
+                except ValueError:
+                    last_payload = response.text
+
+            if response.status_code != 429:
                 self.retries = 0
-                return status_code, payload
+                return last_status, last_payload
 
             self.retries += 1
-            logging.info("429 Rate limit. Retrying in %s seconds...", self.timeout)
-            if attempt < self.max_tries:
-                time.sleep(self.timeout)
+            if attempt >= self.max_tries:
+                logging.error("429 Rate limit. Max retries (%s) reached.", self.max_tries)
+                if self.raise_on_429:
+                    raise RateLimitError(response.status_code, url, self.max_tries, response=response)
+                return last_status, last_payload
 
-        logging.error("429 Rate limit. Max retries (%s) reached.", self.max_tries)
+            delay = self._compute_backoff_delay(attempt, response)
+            logging.info("429 Rate limit. Retrying in %s seconds...", delay)
+            if delay > 0:
+                time.sleep(delay)
+
         return last_status, last_payload
 
     def process_response(self, status_code, payload):
@@ -204,20 +296,39 @@ class RateLimitedNetworking:
             logging.error("429 Rate limit. Max retries (%s) reached.", self.max_tries)
         return status_code, payload
 
-    def pre_process(self):
+    def pre_process(self, url):
         if not self.max_requests_per_second:
             return
 
-        now = time.monotonic()
-        while self.requests and now - self.requests[0] >= 1.0:
-            self.requests.popleft()
+        host = urlsplit(url).netloc or ""
+        bucket = self._get_bucket(host)
+        if bucket is not None:
+            bucket.acquire()
 
-        while len(self.requests) >= self.max_requests_per_second:
-            sleep_for = 1.0 - (now - self.requests[0])
-            if sleep_for > 0:
-                time.sleep(sleep_for)
-            now = time.monotonic()
-            while self.requests and now - self.requests[0] >= 1.0:
-                self.requests.popleft()
+    def _get_bucket(self, host):
+        with self._buckets_lock:
+            bucket = self._buckets.get(host)
+            if bucket is None:
+                capacity = self.max_burst if self.max_burst is not None else self.max_requests_per_second
+                bucket = _TokenBucket(self.max_requests_per_second, capacity)
+                self._buckets[host] = bucket
+            return bucket
 
-        self.requests.append(time.monotonic())
+    def _compute_backoff_delay(self, attempt, response):
+        retry_after = None
+        if self.respect_retry_after and response is not None:
+            retry_after = _retry_after_seconds(response.headers.get("Retry-After"))
+
+        if retry_after is not None:
+            return retry_after
+
+        if self.backoff_strategy == "fixed":
+            delay = self.timeout
+        elif self.backoff_strategy == "exponential":
+            delay = self.timeout * (2 ** attempt)
+        else:
+            raise ValueError(f"Unsupported backoff strategy: {self.backoff_strategy}")
+
+        if self.jitter:
+            delay = random.uniform(0, delay)
+        return delay
