@@ -4,16 +4,23 @@ from jm_networking import AsyncNetworking, InternalServerError
 
 
 class FakeResponse:
-    def __init__(self, status, text, json_data=None, headers=None):
+    def __init__(self, status, text, json_data=None, headers=None, json_error=False):
         self.status = status
         self._text = text
         self._json = json_data
+        self._json_error = json_error
         self.headers = headers or {}
+        self.text_calls = 0
+        self.json_calls = 0
 
     async def text(self):
+        self.text_calls += 1
         return self._text
 
     async def json(self):
+        self.json_calls += 1
+        if self._json_error:
+            raise ValueError("invalid json")
         return self._json
 
 
@@ -53,6 +60,8 @@ class TestAsyncNetworking(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(status, 200)
         self.assertEqual(payload, {"ok": True})
         self.assertEqual(session.requests[0][0], "GET")
+        self.assertEqual(response.json_calls, 1)
+        self.assertEqual(response.text_calls, 0)
 
     async def test_get_raises_on_non_2xx(self):
         response = FakeResponse(500, "boom")
@@ -63,6 +72,19 @@ class TestAsyncNetworking(unittest.IsolatedAsyncioTestCase):
             await client.get("https://example.com")
 
         self.assertEqual(ctx.exception.status_code, 500)
+        self.assertEqual(response.text_calls, 1)
+
+    async def test_get_json_falls_back_to_text(self):
+        response = FakeResponse(200, "not json", json_data=None, json_error=True)
+        session = FakeSession(response)
+        client = AsyncNetworking(session=session)
+
+        status, payload = await client.get("https://example.com", is_json=True)
+
+        self.assertEqual(status, 200)
+        self.assertEqual(payload, "not json")
+        self.assertEqual(response.json_calls, 1)
+        self.assertEqual(response.text_calls, 1)
 
 
 if __name__ == "__main__":

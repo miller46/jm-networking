@@ -18,6 +18,18 @@ try:
 except ImportError:
     aiohttp = None
 
+_SESSION = None
+_SESSION_LOCK = threading.Lock()
+
+
+def _get_session():
+    global _SESSION
+    if _SESSION is None:
+        with _SESSION_LOCK:
+            if _SESSION is None:
+                _SESSION = requests.Session()
+    return _SESSION
+
 
 class NetworkError(Exception):
     """Base class for all networking errors raised by this library."""
@@ -158,7 +170,8 @@ class JmNetwork:
     @staticmethod
     def get(url, is_json=False, params=None, **kwargs):
         try:
-            request = requests.get(url, params, **kwargs)
+            session = _get_session()
+            request = session.get(url, params=params, **kwargs)
         except requests.exceptions.Timeout as ex:
             raise NetworkTimeoutError("Request timed out", url=url, original=ex) from ex
         except requests.exceptions.RequestException as ex:
@@ -174,7 +187,8 @@ class JmNetwork:
     @staticmethod
     def post(url, data=None, json=None, **kwargs):
         try:
-            request = requests.post(url, data, json, **kwargs)
+            session = _get_session()
+            request = session.post(url, data=data, json=json, **kwargs)
         except requests.exceptions.Timeout as ex:
             raise NetworkTimeoutError("Request timed out", url=url, original=ex) from ex
         except requests.exceptions.RequestException as ex:
@@ -187,7 +201,8 @@ class JmNetwork:
     @staticmethod
     def put(url, data=None, **kwargs):
         try:
-            request = requests.put(url, data, **kwargs)
+            session = _get_session()
+            request = session.put(url, data=data, **kwargs)
         except requests.exceptions.Timeout as ex:
             raise NetworkTimeoutError("Request timed out", url=url, original=ex) from ex
         except requests.exceptions.RequestException as ex:
@@ -200,7 +215,8 @@ class JmNetwork:
     @staticmethod
     def delete(url, **kwargs):
         try:
-            request = requests.delete(url, **kwargs)
+            session = _get_session()
+            request = session.delete(url, **kwargs)
         except requests.exceptions.Timeout as ex:
             raise NetworkTimeoutError("Request timed out", url=url, original=ex) from ex
         except requests.exceptions.RequestException as ex:
@@ -359,19 +375,25 @@ class AsyncNetworking:
 
         try:
             async with self._session.request(method, url, **kwargs) as resp:
-                text = await resp.text()
+                text = None
                 if not _is_success(resp.status):
+                    text = await resp.text()
                     if self.on_failure_callback is not None:
                         await self._maybe_await(self.on_failure_callback(resp))
                     if self.raise_on_non_2xx:
                         _raise_for_status(resp.status, url, body=text, response=resp)
 
-                payload = text
                 if is_json:
                     try:
                         payload = await resp.json()
                     except Exception:
+                        if text is None:
+                            text = await resp.text()
                         payload = text
+                else:
+                    if text is None:
+                        text = await resp.text()
+                    payload = text
 
                 if self.on_success_callback is not None:
                     return await self._maybe_await(self.on_success_callback(resp))
