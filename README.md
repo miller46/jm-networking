@@ -1,11 +1,12 @@
 # jm-networking
 
-Lightweight networking library that supports async callbacks and json serialization/deserialization
+Lightweight networking library with sync and async HTTP helpers plus JSON serialization/deserialization.
 
 ## Features
 
 - Simple static methods for quick requests
-- Async callbacks for success/failure/exception handling
+- Async client built on `aiohttp`
+- Exceptions on non-2xx responses (`HttpError` and subclasses)
 - Automatic object serialization and deserialization with dataclasses
 
 ## Installation
@@ -26,39 +27,35 @@ status_code, text = JmNetwork.get("https://jsonplaceholder.typicode.com/todos/1"
 status_code, payload = JmNetwork.get("https://jsonplaceholder.typicode.com/todos/1", is_json=True)
 ```
 
-### Callback Pattern
+### Async Requests
 
 ```python
+import asyncio
 from jm_networking import AsyncNetworking
 
-def on_success(result):
-    print(result.text)
+async def main():
+    async with AsyncNetworking() as network:
+        status_code, payload = await network.get(
+            "https://jsonplaceholder.typicode.com/todos/1",
+            is_json=True
+        )
+        print(status_code, payload)
 
-def on_failure(result):
-    print(result.status_code)
-
-with AsyncNetworking() as network:
-    network.on_success(on_success)
-    network.on_failure(on_failure)
-    network.get("https://jsonplaceholder.typicode.com/todos/1")
+asyncio.run(main())
 ```
 
-### Custom Headers
+### Async Custom Headers
 
 ```python
+import asyncio
 from jm_networking import AsyncNetworking
 
-def on_success(result):
-    print(result.text)
+async def main():
+    async with AsyncNetworking(headers={"Authorization": "Bearer token123"}) as network:
+        status_code, text = await network.get("https://jsonplaceholder.typicode.com/todos/1")
+        print(status_code, text)
 
-def on_failure(result):
-    print(result.text)
-
-with AsyncNetworking() as network:
-    network.set_headers({"Authorization": "Bearer token123"})
-    network.on_success(on_success)
-    network.on_failure(on_failure)
-    network.get("https://jsonplaceholder.typicode.com/todos/1")
+asyncio.run(main())
 ```
 
 ### HTTP Methods
@@ -68,6 +65,17 @@ JmNetwork.get(url)
 JmNetwork.post(url, json={"test": "test123"})
 JmNetwork.put(url, json={"test": "test123"})
 JmNetwork.delete(url)
+```
+
+### Exceptions on Non-2xx
+
+```python
+from jm_networking import JmNetwork, HttpError
+
+try:
+    JmNetwork.get("https://jsonplaceholder.typicode.com/404")
+except HttpError as exc:
+    print(exc.status_code)
 ```
 
 ### Object Serialization & Deserialization
@@ -91,9 +99,7 @@ todo = Todo(userId=1, title="New todo", completed=False)
 response = ObjectNetworking.post(todo, "https://jsonplaceholder.typicode.com/todos", params=None)
 
 todo.completed = True
-response = ObjectNetworking.cosimo_put(todo, "https://jsonplaceholder.typicode.com/todos/1", params=None)
+response = ObjectNetworking.put(todo, "https://jsonplaceholder.typicode.com/todos/1", params=None)
 
-response = ObjectNetworking.cosimo_delete(todo, "https://jsonplaceholder.typicode.com/todos/1", params=None)
+response = ObjectNetworking.delete(todo, "https://jsonplaceholder.typicode.com/todos/1", params=None)
 ```
-
-

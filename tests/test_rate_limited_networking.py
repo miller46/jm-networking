@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch, call
 
-from jm_networking import RateLimitedNetworking, RateLimitError
+from jm_networking import RateLimitedNetworking, TooManyRequestsError
 
 
 class FakeClock:
@@ -65,7 +65,7 @@ class TestRateLimitedNetworking(unittest.TestCase):
              patch("jm_networking.time.sleep") as mock_sleep, \
              patch("jm_networking.time.monotonic", return_value=0.0):
             client = RateLimitedNetworking(max_retries=1, max_requests_per_second=1000, timeout=2)
-            with self.assertRaises(RateLimitError):
+            with self.assertRaises(TooManyRequestsError):
                 client.get("https://example.com", is_json=True)
 
         self.assertEqual(mock_get.call_count, 2)

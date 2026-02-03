@@ -16,7 +16,8 @@ VERSION = '1.1.0'
 
 REQUIRED = [
      'requests',
-     'marshmallow_dataclass'
+     'marshmallow_dataclass',
+     'aiohttp'
 ]
 
 

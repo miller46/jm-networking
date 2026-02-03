@@ -1,5 +1,7 @@
 import json
 
+import asyncio
+import inspect
 import random
 import requests
 import logging
@@ -11,6 +13,143 @@ from urllib.parse import urlsplit
 
 from marshmallow_dataclass import class_schema
 
+try:
+    import aiohttp
+except ImportError:
+    aiohttp = None
+
+
+class NetworkError(Exception):
+    """Base class for all networking errors raised by this library."""
+
+
+class TransportError(NetworkError):
+    """Errors where no HTTP response was received (DNS, connect, SSL, etc.)."""
+
+    def __init__(self, message, url=None, original=None):
+        self.url = url
+        self.original = original
+        super().__init__(message)
+
+
+class NetworkTimeoutError(TransportError):
+    """Request timed out."""
+
+
+class HttpError(NetworkError):
+    """HTTP response received but status was non-2xx."""
+
+    def __init__(self, status_code, url, body=None, response=None):
+        self.status_code = status_code
+        self.url = url
+        self.body = body
+        self.response = response
+        super().__init__(f"HTTP {status_code} for {url}")
+
+
+class HttpRedirectError(HttpError):
+    """3xx responses (only if redirects are disabled)."""
+
+
+class HttpClientError(HttpError):
+    """4xx responses."""
+
+
+class HttpServerError(HttpError):
+    """5xx responses."""
+
+
+class BadRequestError(HttpClientError):
+    """400 Bad Request."""
+
+
+class UnauthorizedError(HttpClientError):
+    """401 Unauthorized."""
+
+
+class ForbiddenError(HttpClientError):
+    """403 Forbidden."""
+
+
+class NotFoundError(HttpClientError):
+    """404 Not Found."""
+
+
+class ConflictError(HttpClientError):
+    """409 Conflict."""
+
+
+class UnprocessableEntityError(HttpClientError):
+    """422 Unprocessable Entity."""
+
+
+class TooManyRequestsError(HttpClientError):
+    """429 Too Many Requests."""
+
+    def __init__(self, status_code, url, body=None, response=None, retries=None):
+        self.retries = retries
+        super().__init__(status_code, url, body=body, response=response)
+
+
+class InternalServerError(HttpServerError):
+    """500 Internal Server Error."""
+
+
+class BadGatewayError(HttpServerError):
+    """502 Bad Gateway."""
+
+
+class ServiceUnavailableError(HttpServerError):
+    """503 Service Unavailable."""
+
+
+class GatewayTimeoutError(HttpServerError):
+    """504 Gateway Timeout."""
+
+
+def _is_success(status_code):
+    return 200 <= status_code < 300
+
+
+def _exception_for_status(status_code):
+    if status_code == 400:
+        return BadRequestError
+    if status_code == 401:
+        return UnauthorizedError
+    if status_code == 403:
+        return ForbiddenError
+    if status_code == 404:
+        return NotFoundError
+    if status_code == 409:
+        return ConflictError
+    if status_code == 422:
+        return UnprocessableEntityError
+    if status_code == 429:
+        return TooManyRequestsError
+    if status_code == 500:
+        return InternalServerError
+    if status_code == 502:
+        return BadGatewayError
+    if status_code == 503:
+        return ServiceUnavailableError
+    if status_code == 504:
+        return GatewayTimeoutError
+
+    if 300 <= status_code < 400:
+        return HttpRedirectError
+    if 400 <= status_code < 500:
+        return HttpClientError
+    if 500 <= status_code < 600:
+        return HttpServerError
+    return HttpError
+
+
+def _raise_for_status(status_code, url, body=None, response=None):
+    if _is_success(status_code):
+        return
+    exc_cls = _exception_for_status(status_code)
+    raise exc_cls(status_code, url, body=body, response=response)
+
 
 class JmNetwork:
 
@@ -18,34 +157,57 @@ class JmNetwork:
 
     @staticmethod
     def get(url, is_json=False, params=None, **kwargs):
-        request = requests.get(url, params, **kwargs)
+        try:
+            request = requests.get(url, params, **kwargs)
+        except requests.exceptions.Timeout as ex:
+            raise NetworkTimeoutError("Request timed out", url=url, original=ex) from ex
+        except requests.exceptions.RequestException as ex:
+            raise TransportError("Network error", url=url, original=ex) from ex
         status_code = request.status_code
         text = request.text
-        if is_json is False or status_code != 200:
+        _raise_for_status(status_code, url, text, response=request)
+        if is_json is False:
             return status_code, text
-        else:
-            payload = json.loads(text)
-            return status_code, payload
+        payload = json.loads(text)
+        return status_code, payload
 
     @staticmethod
     def post(url, data=None, json=None, **kwargs):
-        request = requests.post(url, data, json, **kwargs)
+        try:
+            request = requests.post(url, data, json, **kwargs)
+        except requests.exceptions.Timeout as ex:
+            raise NetworkTimeoutError("Request timed out", url=url, original=ex) from ex
+        except requests.exceptions.RequestException as ex:
+            raise TransportError("Network error", url=url, original=ex) from ex
         status_code = request.status_code
         text = request.text
+        _raise_for_status(status_code, url, text, response=request)
         return status_code, text
 
     @staticmethod
     def put(url, data=None, **kwargs):
-        request = requests.put(url, data, **kwargs)
+        try:
+            request = requests.put(url, data, **kwargs)
+        except requests.exceptions.Timeout as ex:
+            raise NetworkTimeoutError("Request timed out", url=url, original=ex) from ex
+        except requests.exceptions.RequestException as ex:
+            raise TransportError("Network error", url=url, original=ex) from ex
         status_code = request.status_code
         text = request.text
+        _raise_for_status(status_code, url, text, response=request)
         return status_code, text
 
     @staticmethod
     def delete(url, **kwargs):
-        request = requests.delete(url, **kwargs)
+        try:
+            request = requests.delete(url, **kwargs)
+        except requests.exceptions.Timeout as ex:
+            raise NetworkTimeoutError("Request timed out", url=url, original=ex) from ex
+        except requests.exceptions.RequestException as ex:
+            raise TransportError("Network error", url=url, original=ex) from ex
         status_code = request.status_code
         text = request.text
+        _raise_for_status(status_code, url, text, response=request)
         return status_code, text
 
 
@@ -53,8 +215,14 @@ class ObjectNetworking:
 
     @staticmethod
     def get(url, class_object, params=None, **kwargs):
-        request = requests.get(url, params, **kwargs)
+        try:
+            request = requests.get(url, params, **kwargs)
+        except requests.exceptions.Timeout as ex:
+            raise NetworkTimeoutError("Request timed out", url=url, original=ex) from ex
+        except requests.exceptions.RequestException as ex:
+            raise TransportError("Network error", url=url, original=ex) from ex
         status_code = request.status_code
+        _raise_for_status(status_code, url, request.text, response=request)
         data = request.json()
 
         try:
@@ -88,25 +256,35 @@ class ObjectNetworking:
         schema = schema_cls()
         payload = schema.dump(class_object)
 
-        if method == "post":
-            resp = requests.post(url, json=payload, params=params)
-        elif method == "put":
-            resp = requests.put(url, json=payload, params=params)
-        elif method == "delete":
-            resp = requests.delete(url, params=params)
-        else:
-            raise ValueError(f"Unsupported method: {method}")
+        try:
+            if method == "post":
+                resp = requests.post(url, json=payload, params=params)
+            elif method == "put":
+                resp = requests.put(url, json=payload, params=params)
+            elif method == "delete":
+                resp = requests.delete(url, params=params)
+            else:
+                raise ValueError(f"Unsupported method: {method}")
+        except requests.exceptions.Timeout as ex:
+            raise NetworkTimeoutError("Request timed out", url=url, original=ex) from ex
+        except requests.exceptions.RequestException as ex:
+            raise TransportError("Network error", url=url, original=ex) from ex
+        _raise_for_status(resp.status_code, url, resp.text, response=resp)
         return resp
 
 class AsyncNetworking:
 
     logger = logging.getLogger()
 
-    def __init__(self):
+    def __init__(self, session=None, headers=None, timeout=None, raise_on_non_2xx=True):
         self.on_success_callback = None
         self.on_failure_callback = None
         self.on_exception_callback = None
-        self.headers = {}
+        self.headers = headers or {}
+        self.timeout = timeout
+        self.raise_on_non_2xx = raise_on_non_2xx
+        self._session = session
+        self._owns_session = False
 
     def set_headers(self, headers):
         self.headers = headers
@@ -123,49 +301,100 @@ class AsyncNetworking:
     def default_exception_callback(self, exception):
         self.log(exception, error=True)
 
-    def get(self, url):
-        self.log("Attempting GET " + url)
-        req = requests.get(url, headers=self.headers)
-        return self.finish(req)
+    async def get(self, url, is_json=False, params=None, **kwargs):
+        return await self._request("GET", url, is_json=is_json, params=params, **kwargs)
 
-    def put(self, url, data):
-        self.log("Attempting PUT " + url)
-        req = requests.put(url, data=data, headers=self.headers)
-        return self.finish(req)
+    async def put(self, url, data=None, json=None, **kwargs):
+        return await self._request("PUT", url, data=data, json=json, **kwargs)
 
-    def post(self, url, data):
-        self.log("Attempting POST " + url)
-        req = requests.post(url, data=data, json=None, headers=self.headers)
-        return self.finish(req)
+    async def post(self, url, data=None, json=None, **kwargs):
+        return await self._request("POST", url, data=data, json=json, **kwargs)
 
-    def delete(self, url):
-        self.log("Attempting DELETE " + url)
-        req = requests.delete(url, headers=self.headers)
-        return self.finish(req)
+    async def delete(self, url, **kwargs):
+        return await self._request("DELETE", url, **kwargs)
 
-    def finish(self, result):
-        if result.status_code < 400:
-            if self.on_success_callback is not None:
-                try:
-                    return self.on_success_callback(result)
-                except Exception as ex:
-                    if self.on_exception_callback is not None:
-                        return self.on_exception_callback(ex)
+    async def close(self):
+        if self._owns_session and self._session is not None:
+            await self._session.close()
+            self._session = None
+            self._owns_session = False
+
+    async def __aenter__(self):
+        if self._session is None:
+            self._session = self._create_session()
+            self._owns_session = True
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self.close()
+        return False
+
+    def _create_session(self):
+        if aiohttp is None:
+            raise RuntimeError("aiohttp is required for AsyncNetworking. Install aiohttp to use async requests.")
+        timeout = aiohttp.ClientTimeout(total=self.timeout) if self.timeout is not None else None
+        return aiohttp.ClientSession(headers=self.headers or None, timeout=timeout)
+
+    async def _request(self, method, url, is_json=False, params=None, data=None, json=None, **kwargs):
+        if self._session is None:
+            self._session = self._create_session()
+            self._owns_session = True
+
+        headers = {}
+        if self.headers:
+            headers.update(self.headers)
+        if "headers" in kwargs and kwargs["headers"]:
+            headers.update(kwargs["headers"])
+        if headers:
+            kwargs["headers"] = headers
         else:
-            self.log(str(result.status_code) + ": " + result.text, error=True)
-            if self.on_failure_callback is not None:
-                try:
-                    return self.on_failure_callback(result)
-                except Exception as ex:
-                    if self.on_exception_callback is not None:
-                        return self.on_exception_callback(ex)
-        return None
+            kwargs.pop("headers", None)
 
-    def __enter__(self):
-        return self
+        if params is not None:
+            kwargs["params"] = params
+        if data is not None:
+            kwargs["data"] = data
+        if json is not None:
+            kwargs["json"] = json
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        return self
+        try:
+            async with self._session.request(method, url, **kwargs) as resp:
+                text = await resp.text()
+                if not _is_success(resp.status):
+                    if self.on_failure_callback is not None:
+                        await self._maybe_await(self.on_failure_callback(resp))
+                    if self.raise_on_non_2xx:
+                        _raise_for_status(resp.status, url, body=text, response=resp)
+
+                payload = text
+                if is_json:
+                    try:
+                        payload = await resp.json()
+                    except Exception:
+                        payload = text
+
+                if self.on_success_callback is not None:
+                    return await self._maybe_await(self.on_success_callback(resp))
+                return resp.status, payload
+        except HttpError:
+            raise
+        except asyncio.TimeoutError as ex:
+            if self.on_exception_callback is not None:
+                return await self._maybe_await(self.on_exception_callback(ex))
+            raise NetworkTimeoutError("Request timed out", url=url, original=ex) from ex
+        except Exception as ex:
+            if aiohttp is not None and isinstance(ex, aiohttp.ClientError):
+                if self.on_exception_callback is not None:
+                    return await self._maybe_await(self.on_exception_callback(ex))
+                raise TransportError("Network error", url=url, original=ex) from ex
+            if self.on_exception_callback is not None:
+                return await self._maybe_await(self.on_exception_callback(ex))
+            raise
+
+    async def _maybe_await(self, result):
+        if inspect.isawaitable(result):
+            return await result
+        return result
 
     def log(self, message, error=False):
         if self.logger:
@@ -173,15 +402,6 @@ class AsyncNetworking:
                 self.logger.error(message)
             else:
                 self.logger.info(message)
-
-class RateLimitError(Exception):
-    def __init__(self, status_code, url, retries, response=None):
-        self.status_code = status_code
-        self.url = url
-        self.retries = retries
-        self.response = response
-        super().__init__(f"429 Rate limit after {retries} retries for {url}")
-
 
 class _TokenBucket:
     def __init__(self, rate, capacity):
@@ -262,7 +482,12 @@ class RateLimitedNetworking:
 
         for attempt in range(self.max_tries + 1):
             self.pre_process(url)
-            response = requests.get(url, params=params, **kwargs)
+            try:
+                response = requests.get(url, params=params, **kwargs)
+            except requests.exceptions.Timeout as ex:
+                raise NetworkTimeoutError("Request timed out", url=url, original=ex) from ex
+            except requests.exceptions.RequestException as ex:
+                raise TransportError("Network error", url=url, original=ex) from ex
             last_response = response
             last_status = response.status_code
             last_payload = response.text
@@ -275,13 +500,20 @@ class RateLimitedNetworking:
 
             if response.status_code != 429:
                 self.retries = 0
+                _raise_for_status(response.status_code, url, last_payload, response=response)
                 return last_status, last_payload
 
             self.retries += 1
             if attempt >= self.max_tries:
                 logging.error("429 Rate limit. Max retries (%s) reached.", self.max_tries)
                 if self.raise_on_429:
-                    raise RateLimitError(response.status_code, url, self.max_tries, response=response)
+                    raise TooManyRequestsError(
+                        response.status_code,
+                        url,
+                        body=last_payload,
+                        response=response,
+                        retries=self.max_tries,
+                    )
                 return last_status, last_payload
 
             delay = self._compute_backoff_delay(attempt, response)
